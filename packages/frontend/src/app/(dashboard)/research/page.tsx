@@ -379,7 +379,7 @@ export default function ResearchPage() {
                           <button
                             type="button"
                             className="text-left font-medium text-gray-900 dark:text-white hover:text-primary hover:underline"
-                            onClick={() => router.push(`/paper/${paper.external_id || paper.id}`)}
+                            onClick={() => router.push(`/paper/${encodeURIComponent(paper.external_id || paper.id)}`)}
                           >
                             {paper.title}
                           </button>
@@ -400,7 +400,7 @@ export default function ResearchPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => router.push(`/paper/${paper.external_id || paper.id}`)}
+                            onClick={() => router.push(`/paper/${encodeURIComponent(paper.external_id || paper.id)}`)}
                           >
                             Open paper
                           </Button>

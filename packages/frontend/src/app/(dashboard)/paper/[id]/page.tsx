@@ -43,23 +43,22 @@ export default function PaperDetailPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [paperRes, analysisRes] = await Promise.all([
-        fetch(`/api/backend/papers/${paperId}`),
-        fetch(`/api/backend/papers/${paperId}/analysis`),
-      ]);
+      const paperRes = await fetch(`/api/backend/papers/${encodeURIComponent(paperId)}`);
       
-      if (!paperRes.ok) throw new Error('Paper not found');
+      const paperData = await paperRes.json().catch(() => null);
+      if (!paperRes.ok) {
+        throw new Error(paperData?.detail || paperData?.message || 'Paper not found');
+      }
       
-      const paperData = await paperRes.json();
       setPaper(paperData);
-      
+
+      const analysisRes = await fetch(`/api/backend/papers/${encodeURIComponent(paperId)}/analysis`);
       if (analysisRes.ok) {
-        const analysisData = await analysisRes.json();
+        const analysisData = await analysisRes.json().catch(() => null);
         setAnalysis(analysisData);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load paper');
-      router.push('/research');
     } finally {
       setIsLoading(false);
     }

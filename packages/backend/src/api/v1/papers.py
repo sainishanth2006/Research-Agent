@@ -118,11 +118,17 @@ async def upload_paper(
     
     async with aiofiles.open(file_path, 'wb') as f:
         content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="The uploaded PDF is empty")
+        if len(content) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="The PDF must be smaller than 50MB")
         await f.write(content)
     
     # Process PDF (extract, chunk, embed, store)
     try:
         chunks = await pdf_processor.process_pdf(file_id, file_path)
+        if not chunks:
+            raise HTTPException(status_code=422, detail="Could not extract readable text from this PDF")
         
         # Create paper record (simplified)
         paper_data = {
@@ -183,6 +189,8 @@ async def upload_paper(
             )
 
         return {"paper": paper_data, "chunks_processed": len(chunks)}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 

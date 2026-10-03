@@ -38,7 +38,12 @@ export default function UploadPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const f = e.target.files[0];
-      if (f.type === 'application/pdf') {
+      if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) {
+        if (f.size > 50 * 1024 * 1024) {
+          setError('The PDF must be smaller than 50MB');
+          e.target.value = '';
+          return;
+        }
         setFile(f);
         setError(null);
       } else {
@@ -64,9 +69,14 @@ export default function UploadPage() {
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (!response.ok) throw new Error(data.detail || 'Upload failed');
+      if (!response.ok) {
+        const detail = Array.isArray(data.detail)
+          ? data.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(', ')
+          : data.detail || data.message;
+        throw new Error(detail || `Upload failed (${response.status})`);
+      }
 
       setResult(data);
       setProgress(100);

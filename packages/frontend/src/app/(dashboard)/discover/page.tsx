@@ -2,6 +2,7 @@
 
 import { Search, Filter, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 export default function DiscoverPage() {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<any[]>([]);
@@ -26,24 +28,27 @@ export default function DiscoverPage() {
     setError(null);
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
-        query,
-        limit: '20',
-        ...(filters.yearFrom && { yearFrom: filters.yearFrom }),
-        ...(filters.yearTo && { yearTo: filters.yearTo }),
-        ...(filters.minCitations && { minCitations: filters.minCitations }),
-      });
-      
-      const response = await fetch(`/api/backend/search?${params}`, {
+      const response = await fetch('/api/backend/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: query.trim(),
+          limit: 20,
+          filters: {
+            ...(filters.yearFrom && { yearFrom: Number(filters.yearFrom) }),
+            ...(filters.yearTo && { yearTo: Number(filters.yearTo) }),
+            ...(filters.minCitations && { minCitations: Number(filters.minCitations) }),
+          },
+        }),
       });
       
-      if (!response.ok) throw new Error('Search failed');
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Search failed');
+      }
       setResults(data.results || []);
     } catch (e) {
-      setError('Search failed. Please try again.');
+      setError(e instanceof Error ? e.message : 'Search failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -121,11 +126,17 @@ export default function DiscoverPage() {
         {results.length > 0 && (
           <div className="space-y-3">
             {results.map((paper: any, index: number) => (
-              <div key={paper.id || index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
+              <div key={paper.id || paper.external_id || index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
                 <div className="flex gap-4">
                   <span className="text-2xl font-bold text-gray-300 dark:text-gray-600 w-10 text-right">{index + 1}</span>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 dark:text-white truncate">{paper.title}</h3>
+                    <button
+                      type="button"
+                      className="text-left font-semibold text-gray-900 dark:text-white hover:text-primary hover:underline"
+                      onClick={() => router.push(`/paper/${encodeURIComponent(paper.external_id || paper.id)}`)}
+                    >
+                      {paper.title}
+                    </button>
                     <div className="flex flex-wrap gap-2 mt-1 text-sm text-gray-600 dark:text-gray-400">
                       {paper.authors?.slice(0, 3).map((a: string, i: number) => (
                         <span key={i}>{a}{i < 2 ? ', ' : ''}</span>
