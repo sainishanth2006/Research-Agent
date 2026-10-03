@@ -1,0 +1,298 @@
+// Prisma Schema for MRDU
+// Run: npx prisma generate
+// Run: npx prisma db push
+
+generator client {
+  provider = "prisma-client-py"
+  interface = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTH MODELS (NextAuth.js compatible)
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?   // For credentials auth
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  profiles      ResearchProfile[]
+  projects      ResearchProject[]
+  collections   Collection[]
+  searchHistory SearchHistory[]
+  conversations Conversation[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String  // "credentials"
+  provider          String  // "credentials"
+  providerAccountId String  // email
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================
+// RESEARCH MODELS
+// ============================================
+
+model ResearchProfile {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interests     String[] // research interests
+  domains       String[] // preferred domains
+  methodologies String[] // favorite methodologies
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model ResearchProject {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  query       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  papers      ProjectPaper[]
+  searches    SearchHistory[]
+  conversations Conversation[]
+
+  @@index([userId])
+}
+
+model ProjectPaper {
+  id        String @id @default(cuid())
+  projectId String
+  project   ResearchProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  paperId   String
+  paper     Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  addedAt   DateTime @default(now())
+
+  @@unique([projectId, paperId])
+  @@index([paperId])
+}
+
+// ============================================
+// PAPER MODELS
+// ============================================
+
+model Paper {
+  id              String   @id @default(cuid())
+  externalId      String   @unique // arXiv ID, DOI, or Semantic Scholar ID
+  source          String   // "arxiv", "semantic_scholar", "upload"
+  title           String
+  abstract        String?  @db.Text
+  authors         String[] // JSON array of author names
+  year            Int?
+  venue           String?
+  doi             String?  @unique
+  url             String?
+  pdfUrl          String?
+  citationCount   Int      @default(0)
+  referenceCount  Int      @default(0)
+  topics          String[] // extracted topics
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  chunks          PaperChunk[]
+  projectLinks    ProjectPaper[]
+  collectionLinks CollectionPaper[]
+  citations       PaperCitation[] @relation("citingPaper")
+  references      PaperCitation[] @relation("citedPaper")
+  methods         PaperMethod[]
+  datasets        PaperDataset[]
+
+  @@index([year])
+  @@index([source])
+  @@index([externalId])
+}
+
+model PaperChunk {
+  id        String   @id @default(cuid())
+  paperId   String
+  paper     Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  chunkIndex Int
+  content   String   @db.Text
+  tokenCount Int
+  embedding Unsupported("vector(768)")? // pgvector column
+  chromaId  String?  @unique // Chroma document ID
+  createdAt DateTime @default(now())
+
+  @@index([paperId])
+  @@index([chromaId])
+}
+
+model PaperCitation {
+  id            String @id @default(cuid())
+  citingPaperId String
+  citingPaper   Paper  @relation("citingPaper", fields: [citingPaperId], references: [id], onDelete: Cascade)
+  citedPaperId  String
+  citedPaper    Paper  @relation("citedPaper", fields: [citedPaperId], references: [id], onDelete: Cascade)
+  context       String? @db.Text // citation context snippet
+
+  @@unique([citingPaperId, citedPaperId])
+  @@index([citedPaperId])
+}
+
+model Method {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String? @db.Text
+  category    String? // "deep_learning", "reinforcement_learning", etc.
+  papers      PaperMethod[]
+}
+
+model PaperMethod {
+  id        String @id @default(cuid())
+  paperId   String
+  paper     Paper  @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  methodId  String
+  method    Method @relation(fields: [methodId], references: [id], onDelete: Cascade)
+  confidence Float @default(1.0) // extraction confidence
+
+  @@unique([paperId, methodId])
+}
+
+model Dataset {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String? @db.Text
+  domain      String?
+  size        String? // e.g., "1M interactions"
+  url         String?
+  papers      PaperDataset[]
+}
+
+model PaperDataset {
+  id        String @id @default(cuid())
+  paperId   String
+  paper     Paper  @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  datasetId String
+  dataset   Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  usage     String? // "training", "evaluation", "benchmark"
+
+  @@unique([paperId, datasetId])
+}
+
+// ============================================
+// COLLECTIONS & LIBRARY
+// ============================================
+
+model Collection {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  description String?
+  color     String? // for UI
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  papers    CollectionPaper[]
+}
+
+model CollectionPaper {
+  id           String @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  paperId      String
+  paper        Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  addedAt      DateTime @default(now())
+  notes        String? @db.Text
+
+  @@unique([collectionId, paperId])
+  @@index([paperId])
+}
+
+// ============================================
+// SEARCH & HISTORY
+// ============================================
+
+model SearchHistory {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   ResearchProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  query     String
+  filters   Json? // stored filters
+  resultCount Int
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ============================================
+// CONVERSATIONS
+// ============================================
+
+model Conversation {
+  id        String @id @default(cuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   ResearchProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  title     String
+  context   Json? // current papers, search results, etc.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  ConversationMessage[]
+}
+
+model ConversationMessage {
+  id             String @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String // "user", "assistant", "tool"
+  content        String @db.Text
+  toolCalls      Json? // for assistant tool calls
+  toolResults    Json? // for tool results
+  citations      Json? // array of {paperId, chunkIds, text}
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+}

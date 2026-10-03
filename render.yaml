@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: mrdu-backend
+    env: docker
+    dockerfilePath: ./packages/backend/Dockerfile
+    dockerContext: ./packages/backend
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: mrdu-db
+        property: connectionString
+      - key: CHROMA_HOST
+        value: localhost
+      - key: CHROMA_PORT
+        value: "8000"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SEMANTIC_SCHOLAR_API_KEY
+        sync: false
+      - key: NEXTAUTH_SECRET
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      - key: API_HOST
+        value: "0.0.0.0"
+      - key: API_PORT
+        value: "8000"
+
+  - type: pserv
+    name: mrdu-chroma
+    env: docker
+    dockerfilePath: ./packages/backend/Dockerfile.chroma
+    dockerContext: ./packages/backend
+    plan: free
+    region: oregon
+
+databases:
+  - name: mrdu-db
+    databaseName: mrdu
+    user: mrdu
+    plan: free
+    region: oregon
+    ipAllowList: []
