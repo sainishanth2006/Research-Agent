@@ -4,6 +4,7 @@ from typing import Optional, List
 from sqlalchemy import text
 import os
 import uuid
+import asyncio
 import aiofiles
 
 from src.api.deps import get_current_user, get_db, CurrentUser, DatabaseSession
@@ -83,7 +84,21 @@ async def get_paper_analysis(
     db: DatabaseSession,
 ):
     """Get structured analysis of a paper."""
-    analysis = await paper_analysis_service.analyze_paper(paper_id)
+    paper_result = await db.execute(
+        text(
+            """
+            SELECT id, "externalId" AS external_id, title, abstract
+            FROM "Paper"
+            WHERE id = :paper_id OR "externalId" = :paper_id
+            LIMIT 1
+            """
+        ),
+        {"paper_id": paper_id},
+    )
+    paper = paper_result.mappings().first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    analysis = await paper_analysis_service.analyze_paper(paper["id"], dict(paper))
     analysis["paperId"] = paper_id
     return analysis
 
@@ -99,7 +114,25 @@ async def paper_qa(
     db: DatabaseSession,
 ):
     """Ask a question about a specific paper."""
-    result = await paper_analysis_service.answer_question(paper_id, request.question)
+    paper_result = await db.execute(
+        text(
+            """
+            SELECT id, "externalId" AS external_id, title, abstract
+            FROM "Paper"
+            WHERE id = :paper_id OR "externalId" = :paper_id
+            LIMIT 1
+            """
+        ),
+        {"paper_id": paper_id},
+    )
+    paper = paper_result.mappings().first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    result = await paper_analysis_service.answer_question(
+        paper["id"],
+        request.question,
+        dict(paper),
+    )
     return result
 
 
@@ -130,13 +163,17 @@ async def upload_paper(
         if not chunks:
             raise HTTPException(status_code=422, detail="Could not extract readable text from this PDF")
         
-        # Create paper record (simplified)
+        metadata = await asyncio.to_thread(
+            pdf_processor.extract_metadata,
+            file_path,
+            file.filename or "Uploaded paper",
+        )
         paper_data = {
             "id": file_id,
             "external_id": file_id,
             "source": "upload",
-            "title": os.path.splitext(file.filename)[0],
-            "abstract": chunks[0]["content"][:500] if chunks else "",
+            "title": metadata["title"],
+            "abstract": metadata["abstract"],
             "authors": [],
             "year": None,
             "venue": "Uploaded PDF",

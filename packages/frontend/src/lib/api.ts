@@ -1,7 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { getSession, signOut } from 'next-auth/react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1';
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -67,7 +67,12 @@ export const chatApi = {
     api.post('/chat', data),
   conversations: {
     list: (projectId?: string) => api.get('/chat/conversations', { params: { project_id: projectId } }),
-    create: (data: { title: string; project_id?: string }) => api.post('/chat/conversations', data),
+    create: (data: {
+      title: string;
+      project_id?: string;
+      context?: Record<string, unknown>;
+      initial_messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    }) => api.post('/chat/conversations', data),
     messages: (id: string) => api.get(`/chat/conversations/${id}/messages`),
   },
 };

@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional, List
 from sqlalchemy import text
+import asyncio
 import json
 import uuid
 
@@ -79,7 +80,15 @@ async def search_papers(
     db: DatabaseSession,
 ):
     """Hybrid search for papers."""
-    results = await search_service.hybrid_search(db, request.query, request.limit)
+    results = await asyncio.wait_for(
+        search_service.hybrid_search(
+            db,
+            request.query,
+            request.limit,
+            expanded_terms=request.expanded_terms,
+        ),
+        timeout=45,
+    )
     await _persist_papers(db, results)
 
     await db.execute(
@@ -99,11 +108,9 @@ async def search_papers(
         },
     )
     
-    # Extract expanded terms
-    expanded = []
-    if results:
-        # The search service returns expanded terms internally
-        expanded = await search_service.expand_query(request.query)
+    # The frontend already performed expansion before starting the search.
+    # Avoid a second provider call after the expensive search pipeline.
+    expanded = request.expanded_terms or []
     
     return SearchResponse(
         results=results,

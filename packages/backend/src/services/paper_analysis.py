@@ -10,12 +10,16 @@ class PaperAnalysisService:
     def __init__(self):
         self.llm = llm_service
 
-    async def analyze_paper(self, paper_id: str) -> Dict:
+    async def analyze_paper(self, paper_id: str, paper_context: Dict | None = None) -> Dict:
         """Extract structured analysis from paper chunks."""
         # Get chunks from vector store
-        chunks = vector_store.get_chunks(paper_id)
+        try:
+            chunks = vector_store.get_chunks(paper_id)
+        except Exception as e:
+            print(f"Chunk retrieval error: {e}")
+            chunks = []
         if not chunks:
-            return self._empty_analysis()
+            return self._analysis_from_metadata(paper_context)
         
         # Combine chunks for analysis (limit tokens)
         full_text = "\n\n".join([c["content"] for c in chunks[:20]])
@@ -46,7 +50,54 @@ Paper text:
             return self._format_analysis(result, chunks)
         except Exception as e:
             print(f"Analysis error: {e}")
+            return self._analysis_from_metadata(paper_context)
+
+    def _analysis_from_metadata(self, paper_context: Dict | None) -> Dict:
+        """Provide useful analysis for papers whose full text is not indexed."""
+        abstract = (paper_context or {}).get("abstract") or ""
+        if not abstract:
             return self._empty_analysis()
+
+        title = (paper_context or {}).get("title") or "This paper"
+        return {
+            "paperId": "",
+            "researchProblem": {
+                "text": f"{title} describes the following research focus:\n\n{abstract}",
+                "citations": [],
+            },
+            "methodology": {
+                "text": "The full paper text has not been indexed yet. Open the PDF or upload the paper to enable detailed methodology extraction.",
+                "citations": [],
+            },
+            "dataset": {
+                "text": "Dataset details are not available in the stored metadata and abstract.",
+                "citations": [],
+            },
+            "experiments": {
+                "text": "Experimental details are not available in the stored metadata and abstract.",
+                "citations": [],
+            },
+            "metrics": {
+                "text": "Evaluation metrics are not available in the stored metadata and abstract.",
+                "citations": [],
+            },
+            "keyFindings": [{
+                "text": abstract,
+                "citations": [],
+            }],
+            "contributions": [{
+                "text": "The abstract is available, but detailed contribution extraction requires the indexed full text.",
+                "citations": [],
+            }],
+            "limitations": [{
+                "text": "The available metadata does not contain enough information to identify the paper's limitations reliably.",
+                "citations": [],
+            }],
+            "futureWork": [{
+                "text": "Upload or index the full paper to extract the authors' proposed future work.",
+                "citations": [],
+            }],
+        }
 
     def _format_analysis(self, result: Dict, chunks: List) -> Dict:
         """Format analysis with proper citation structure."""
@@ -95,18 +146,46 @@ Paper text:
             "futureWork": [],
         }
 
-    async def answer_question(self, paper_id: str, question: str) -> Dict:
+    async def answer_question(self, paper_id: str, question: str, paper_context: Dict | None = None) -> Dict:
         """Answer a question about a specific paper using RAG."""
-        chunks = vector_store.get_chunks(paper_id)
+        try:
+            chunks = vector_store.get_chunks(paper_id)
+        except Exception as e:
+            print(f"Chunk retrieval error: {e}")
+            chunks = []
         if not chunks:
-            return {"answer": "Paper content not available.", "citations": []}
+            abstract = (paper_context or {}).get("abstract") or ""
+            if not abstract:
+                return {"answer": "Paper content is not available yet. Open the PDF or upload it to ask questions.", "citations": []}
+            try:
+                answer = await self.llm.generate(
+                    f"""Answer the question using only this paper abstract.
+If the abstract does not contain the answer, say that it is not available.
+
+Paper abstract:
+{abstract}
+
+Question: {question}""",
+                    model="flash",
+                )
+                return {"answer": answer, "citations": []}
+            except Exception as e:
+                print(f"Metadata Q&A error: {e}")
+                return {"answer": "The paper abstract is available, but the assistant could not answer right now.", "citations": []}
         
         # Retrieve top relevant chunks
         from src.services.embeddings import embedding_service
-        query_embedding = await embedding_service.embed_query(question)
-        results = vector_store.query(query_embedding, n_results=5, where={"paper_id": paper_id})
-        
-        context = "\n\n".join([results["documents"][0][i] for i in range(len(results["documents"][0]))])
+        try:
+            query_embedding = await embedding_service.embed_query(question)
+            results = vector_store.query(query_embedding, n_results=5, where={"paper_id": paper_id})
+            documents = results["documents"][0]
+            metadatas = results["metadatas"][0]
+        except Exception as e:
+            print(f"Vector Q&A unavailable, using uploaded paper chunks: {e}")
+            documents = [chunk["content"] for chunk in chunks[:5]]
+            metadatas = [{"chunk_index": chunk["chunk_index"]} for chunk in chunks[:5]]
+
+        context = "\n\n".join(documents)
         
         prompt = f"""Answer the question based only on the provided paper content.
 If the answer is not in the content, say "Information unavailable."
@@ -120,8 +199,8 @@ Question: {question}"""
         
         return {
             "answer": answer,
-            "citations": [{"chunk_index": results["metadatas"][0][i]["chunk_index"], "paper_id": paper_id} 
-                         for i in range(len(results["documents"][0]))],
+            "citations": [{"chunk_index": metadata["chunk_index"], "paper_id": paper_id}
+                          for metadata in metadatas],
         }
 
 

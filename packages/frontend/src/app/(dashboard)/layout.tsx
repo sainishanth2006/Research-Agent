@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
   Search,
-  FileText,
   Upload,
   GitCompare,
   Clock,
@@ -31,7 +30,6 @@ import { Separator } from '@/components/ui/separator';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Research', href: '/research', icon: Search },
-  { name: 'Discover Papers', href: '/discover', icon: FileText },
   { name: 'Upload Paper', href: '/upload', icon: Upload },
   { name: 'Compare', href: '/compare', icon: GitCompare },
   { name: 'Timeline', href: '/timeline', icon: Clock },

@@ -26,7 +26,7 @@ export const DEFAULT_SEARCH_LIMIT = 20;
 export const DEFAULT_RERANK_LIMIT = 10;
 
 export const GEMINI_MODELS = {
-  FLASH: 'gemini-1.5-flash',
+  FLASH: 'gemini-3.5-flash',
   PRO: 'gemini-1.5-pro',
   EMBEDDING: 'text-embedding-004',
 } as const;

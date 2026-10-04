@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     # Embedding
-    embedding_model: str = "text-embedding-004"
+    embedding_model: str = "models/gemini-embedding-001"
     embedding_dim: int = 768
     chunk_size: int = 500
     chunk_overlap: int = 50
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     default_rerank_limit: int = 10
 
     # Gemini models
-    gemini_models: dict = {"FLASH": "gemini-1.5-flash", "PRO": "gemini-1.5-pro", "EMBEDDING": "text-embedding-004"}
+    gemini_models: dict = {"FLASH": "gemini-3.5-flash", "PRO": "gemini-2.5-pro", "EMBEDDING": "models/gemini-embedding-001"}
 
     @property
     def chroma_url(self) -> str:

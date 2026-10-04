@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from contextlib import asynccontextmanager
-import os
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from src.config import settings
 
@@ -10,9 +10,17 @@ class Base(DeclarativeBase):
     pass
 
 
+def _async_database_url(database_url: str) -> str:
+    """Convert the Prisma URL format to an asyncpg-compatible URL."""
+    parsed = urlsplit(database_url)
+    query = [(key, value) for key, value in parse_qsl(parsed.query) if key != "schema"]
+    normalized = urlunsplit(parsed._replace(query=urlencode(query)))
+    return normalized.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+
 # Create async engine
 engine = create_async_engine(
-    settings.database_url.replace("postgresql://", "postgresql+asyncpg://"),
+    _async_database_url(settings.database_url),
     echo=False,  # Set to True for SQL debugging
     pool_pre_ping=True,
     pool_size=10,

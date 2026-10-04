@@ -10,7 +10,6 @@ import {
   FolderOpen,
   Clock,
   TrendingUp,
-  BookOpen,
   ArrowRight,
   Plus,
 } from 'lucide-react';
@@ -28,7 +27,6 @@ const statDefinitions = [
 const quickActions = [
   { name: 'Start Research', description: 'Enter a research question to begin', href: '/research', icon: Search, primary: true },
   { name: 'Upload Paper', description: 'Analyze a PDF from your computer', href: '/upload', icon: FileText },
-  { name: 'Browse Papers', description: 'Discover papers by topic or keyword', href: '/discover', icon: BookOpen },
   { name: 'Create Collection', description: 'Organize your saved papers', href: '/library', icon: FolderOpen },
 ];
 
@@ -119,7 +117,7 @@ export default function DashboardPage() {
         <Card>
           <CardContent className="p-6">
             <div className="text-center py-12">
-              <BookOpen className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+              <FileText className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">No activity yet</h3>
               <p className="mt-1 text-gray-600 dark:text-gray-400">
                 Start by searching for papers or uploading a PDF

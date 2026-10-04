@@ -28,7 +28,7 @@ class EmbeddingService:
                     genai.embed_content,
                     model=self.model,
                     content=batch,
-                    task_type="retrieval_document"
+                    task_type="retrieval_document",
                 )
                 all_embeddings.extend(result["embedding"])
             except Exception as e:
@@ -41,11 +41,14 @@ class EmbeddingService:
     async def embed_query(self, query: str) -> List[float]:
         """Generate embedding for a search query."""
         try:
-            result = await asyncio.to_thread(
-                genai.embed_content,
-                model=self.model,
-                content=query,
-                task_type="retrieval_query"
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    genai.embed_content,
+                    model=self.model,
+                    content=query,
+                    task_type="retrieval_query",
+                ),
+                timeout=10,
             )
             return result["embedding"]
         except Exception as e:

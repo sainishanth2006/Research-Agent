@@ -1,7 +1,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1';
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -88,7 +88,7 @@ export const authOptions: NextAuthOptions = {
 
 // Helper functions for register - now calls backend API
 export async function registerUser(email: string, password: string, name: string) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1';
   
   const response = await fetch(`${API_URL}/auth/register`, {
     method: 'POST',

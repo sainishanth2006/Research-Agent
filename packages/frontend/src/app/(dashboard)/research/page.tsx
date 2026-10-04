@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Sparkles, Loader2, ChevronRight, MessageSquare, Brain, Zap, ArrowRight, X, Settings, RefreshCw, GitCompare, Clock, Database } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { searchApi } from '@/lib/api';
+import { chatApi, searchApi } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 const searchSchema = z.object({
@@ -49,6 +49,7 @@ export default function ResearchPage() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [showAgentPanel, setShowAgentPanel] = useState(true);
   const [conversationHistory, setConversationHistory] = useState<Array<{role: 'user' | 'assistant'; content: string; timestamp: Date}>>([]);
+  const [conversationId, setConversationId] = useState<string | undefined>();
   const requestIdRef = useRef(0);
 
   const {
@@ -63,6 +64,70 @@ export default function ResearchPage() {
   });
 
   const query = watch('query');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreLatestConversation = async () => {
+      try {
+        const conversationsResponse = await chatApi.conversations.list();
+        const latest = conversationsResponse.data?.[0];
+        if (!latest || cancelled) return;
+
+        const messagesResponse = await chatApi.conversations.messages(latest.id);
+        if (cancelled) return;
+
+        setConversationId(latest.id);
+        const context = latest.context || {};
+        const restoredResults = Array.isArray(context.papers) ? context.papers : [];
+        const restoredTerms = Array.isArray(context.expanded_terms) ? context.expanded_terms : [];
+        const restoredMessages = messagesResponse.data || [];
+        const restoredQuery = typeof context.query === 'string' ? context.query : latest.title;
+        setConversationHistory(
+          restoredMessages.length > 0
+            ? restoredMessages.map((message: { role: 'user' | 'assistant'; content: string }) => ({
+                role: message.role,
+                content: message.content,
+                timestamp: new Date(latest.updated_at),
+              }))
+            : [
+                { role: 'user', content: restoredQuery, timestamp: new Date(latest.created_at) },
+                {
+                  role: 'assistant',
+                  content: `Found ${restoredResults.length} relevant papers. You can continue asking questions about this research session.`,
+                  timestamp: new Date(latest.updated_at),
+                },
+              ]
+        );
+        setResults(restoredResults);
+        setExpandedConcepts(
+          restoredTerms.map((term: string) => ({
+            term,
+            reason: 'Restored from this research session',
+            selected: true,
+          }))
+        );
+        reset({ query: restoredQuery });
+        if (restoredResults.length > 0) {
+          const restoredSteps = initializeAgentSteps().map((step) => ({
+            ...step,
+            status: 'completed' as const,
+          }));
+          setAgentSteps(restoredSteps);
+          setCurrentStepIndex(restoredSteps.length - 1);
+        }
+      } catch (restoreError) {
+        if (!cancelled) {
+          setError(restoreError instanceof Error ? restoreError.message : 'Could not restore research session');
+        }
+      }
+    };
+
+    void restoreLatestConversation();
+    return () => {
+      cancelled = true;
+    };
+  }, [reset]);
 
   const initializeAgentSteps = () => [
     { id: '1', type: 'understanding', title: 'Understanding your research', description: 'Analyzing your natural language query to identify core concepts, intent, and research goals', status: 'pending' as const },
@@ -98,8 +163,32 @@ export default function ResearchPage() {
     ));
     setCurrentStepIndex(1);
 
-    const expandResult = await searchApi.expand(searchQuery);
-    const conceptsData: ExpandedConcept[] = expandResult.expanded_terms?.map((term: string) => ({
+    const fallbackTerms = searchQuery
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/\s+/)
+      .filter((term) => term.length > 2)
+      .slice(0, 6)
+      .flatMap((term) => [term, `${term} methods`])
+      .filter((term, index, terms) => terms.indexOf(term) === index)
+      .slice(0, 8);
+
+    let expandedTerms = fallbackTerms;
+    try {
+      const expandResult = await Promise.race([
+        searchApi.expand(searchQuery),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Concept expansion timed out')), 8000)
+        ),
+      ]);
+      if (Array.isArray(expandResult.expanded_terms) && expandResult.expanded_terms.length > 0) {
+        expandedTerms = expandResult.expanded_terms;
+      }
+    } catch {
+      // Continue with local terms when the optional expansion service is unavailable.
+    }
+
+    const conceptsData: ExpandedConcept[] = expandedTerms.map((term: string) => ({
       term,
       reason: 'Semantically related to core concepts',
       selected: true
@@ -115,6 +204,22 @@ export default function ResearchPage() {
     });
     if (requestId !== requestIdRef.current) return;
     setResults(searchResult.results || []);
+    const conversation = await chatApi.conversations.create({
+      title: searchQuery,
+      context: {
+        query: searchQuery,
+        expanded_terms: conceptsData.map(c => c.term),
+        papers: searchResult.results || [],
+      },
+      initial_messages: [
+        { role: 'user', content: searchQuery },
+        {
+          role: 'assistant',
+          content: `Found ${searchResult.results?.length ?? 0} relevant papers. I've analyzed their methodologies, datasets, and key findings. You can explore the results below, or ask me to compare papers, show research gaps, or generate a timeline.`,
+        },
+      ],
+    });
+    setConversationId(conversation.data.id);
     updateStep(2, { count: searchResult.results?.length ?? 0 });
     updateStep(3);
     updateStep(4);
@@ -123,6 +228,11 @@ export default function ResearchPage() {
   };
 
   const onSubmit = async (data: { query: string }) => {
+    if (results.length > 0) {
+      await handleFollowUp(data.query);
+      reset();
+      return;
+    }
     setIsLoading(true);
     setError(null);
     setExpandedConcepts([]);
@@ -196,22 +306,23 @@ export default function ResearchPage() {
 
     setConversationHistory(prev => [...prev, { role: 'user', content: followUp, timestamp: new Date() }]);
     
-    let response = "";
-    if (followUp.includes('compare')) {
-      response = "I'll help you compare papers. Select 2-5 papers from the results and I'll generate a detailed comparison table showing methodologies, datasets, metrics, and findings side by side.";
-    } else if (followUp.includes('gap') || followUp.includes('opportunity')) {
-      response = "I'll analyze the current literature to identify research gaps. Based on the current results, I can see opportunities in cross-domain evaluation, real-world deployment studies, and theoretical analysis of adaptive methods.";
-    } else if (followUp.includes('timeline') || followUp.includes('evolution')) {
-      response = "I'll generate a research evolution timeline. Select a key paper and I'll show you the foundational work before it and the subsequent developments that built upon it.";
-    } else if (followUp.includes('methodology') || followUp.includes('method')) {
-      response = "The top methodologies in your results: 1) Meta-learning (MAML, Alpha MAML) - 3 papers, 2) Graph Neural Networks - 2 papers, 3) Reinforcement Learning - 2 papers, 4) Contrastive Learning - 1 paper. Would you like me to dive deeper into any specific approach?";
-    } else if (followUp.includes('dataset')) {
-      response = "Key datasets in your results: Omniglot (few-shot learning), MovieLens (recommendation), Amazon Reviews (recommendation), custom microblogging datasets. Most papers evaluate on 1-2 benchmarks. Cross-domain evaluation appears limited.";
-    } else {
-      response = "I'm here to help with your research! You can ask me to: compare papers, identify research gaps, show methodology trends, analyze datasets, generate timelines, or suggest follow-up searches.";
+    try {
+      const response = await chatApi.send({
+        message: followUp,
+        conversation_id: conversationId,
+        context: { query, papers: results },
+      });
+      if (!conversationId) {
+        setConversationId(response.data.conversation_id);
+      }
+      setConversationHistory(prev => [...prev, {
+        role: 'assistant',
+        content: response.data.message.content,
+        timestamp: new Date(),
+      }]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Assistant response failed');
     }
-    
-    setConversationHistory(prev => [...prev, { role: 'assistant', content: response, timestamp: new Date() }]);
   };
 
   const suggestedFollowUps = [

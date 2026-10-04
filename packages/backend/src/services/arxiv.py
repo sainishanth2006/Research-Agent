@@ -8,7 +8,11 @@ from src.config import settings
 
 class ArxivFetcher:
     def __init__(self):
-        self.client = arxiv.Client()
+        self.client = arxiv.Client(
+            page_size=20,
+            num_retries=0,
+            delay_seconds=0,
+        )
         self.executor = ThreadPoolExecutor(max_workers=4)
 
     async def search(self, query: str, max_results: int = 50) -> List[dict]:
@@ -20,10 +24,14 @@ class ArxivFetcher:
         )
         
         loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(
-            self.executor,
-            lambda: list(self.client.results(search))
+        results = await asyncio.wait_for(
+            loop.run_in_executor(
+                self.executor,
+                lambda: list(self.client.results(search))
+            ),
+            timeout=8,
         )
+        results = results[:max_results]
         
         papers = []
         for paper in results:
