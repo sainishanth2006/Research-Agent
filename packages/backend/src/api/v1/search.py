@@ -16,7 +16,7 @@ class SearchRequest(BaseModel):
     query: str
     expanded_terms: Optional[List[str]] = None
     filters: Optional[dict] = None
-    limit: int = 20
+    limit: int = 10
 
 
 class SearchResponse(BaseModel):

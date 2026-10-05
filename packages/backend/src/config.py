@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 50
 
     # Search
-    default_search_limit: int = 20
+    default_search_limit: int = 10
     default_rerank_limit: int = 10
 
     # Gemini models
